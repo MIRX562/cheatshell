@@ -9,7 +9,9 @@ Rectangle {
     signal moveRequested(int delta)
     signal submitRequested(bool example)
     signal openSourceRequested()
+    signal openEditorRequested()
     signal refreshRequested()
+    signal settingsRequested()
     signal dismissRequested()
 
     function focusInput() {
@@ -75,8 +77,14 @@ Rectangle {
             } else if (event.key === Qt.Key_O && ctrl) {
                 root.openSourceRequested()
                 event.accepted = true
+            } else if (event.key === Qt.Key_E && ctrl) {
+                root.openEditorRequested()
+                event.accepted = true
             } else if (event.key === Qt.Key_R && ctrl) {
                 root.refreshRequested()
+                event.accepted = true
+            } else if (event.key === Qt.Key_Comma && ctrl) {
+                root.settingsRequested()
                 event.accepted = true
             } else if (event.key === Qt.Key_Q && ctrl) {
                 Qt.quit()

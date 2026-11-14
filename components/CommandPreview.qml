@@ -1,4 +1,5 @@
 import QtQuick
+import "../services"
 
 // Detail panel for the highlighted entry.
 Rectangle {
@@ -20,30 +21,48 @@ Rectangle {
         id: block
 
         property string code: ""
+        property string language: "text"
+
+        readonly property bool showLanguage: language !== "" && language !== "text"
 
         color: "#121318"
         radius: 6
         border.width: 1
         border.color: hoverArea.containsMouse ? "#4a5a7d" : "#2a2d38"
-        implicitHeight: codeText.implicitHeight + 16
+        implicitHeight: stack.implicitHeight + 16
 
         Behavior on border.color {
             ColorAnimation { duration: 100 }
         }
 
-        Text {
-            id: codeText
+        Column {
+            id: stack
             anchors {
                 left: parent.left
                 right: parent.right
                 top: parent.top
                 margins: 8
             }
-            text: block.code
-            color: "#93d9a7"
-            font.family: "monospace"
-            font.pixelSize: 12
-            wrapMode: Text.Wrap
+            spacing: 3
+
+            Text {
+                visible: block.showLanguage
+                text: block.language
+                color: "#6f86b8"
+                font.family: "monospace"
+                font.pixelSize: 8
+            }
+
+            Text {
+                id: codeText
+                width: stack.width
+                textFormat: Text.StyledText
+                text: SyntaxHighlighter.highlight(block.code, block.language)
+                color: "#dbe1ee"
+                font.family: "monospace"
+                font.pixelSize: 12
+                wrapMode: Text.Wrap
+            }
         }
 
         Rectangle {
@@ -152,6 +171,7 @@ Rectangle {
                 CodeBlock {
                     width: parent.width
                     code: root.hasEntry ? root.entry.command : ""
+                    language: root.hasEntry && root.entry.commandLang ? root.entry.commandLang : "text"
                 }
             }
 
@@ -172,9 +192,13 @@ Rectangle {
 
                     delegate: CodeBlock {
                         required property string modelData
+                        required property int index
 
                         width: parent.width
                         code: modelData
+                        language: (root.hasEntry && root.entry.exampleLangs
+                                   && root.entry.exampleLangs[index])
+                                  ? root.entry.exampleLangs[index] : "text"
                     }
                 }
             }

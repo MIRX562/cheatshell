@@ -6,6 +6,7 @@ ListView {
 
     signal selectRequested(int index)
     signal copyRequested(var entry)
+    signal loadMoreRequested()
 
     clip: true
     spacing: 3
@@ -13,6 +14,11 @@ ListView {
     cacheBuffer: 400
     highlightMoveDuration: 0
     highlightFollowsCurrentItem: true
+
+    onAtYEndChanged: {
+        if (atYEnd)
+            loadMoreRequested()
+    }
 
     delegate: CommandItem {
         width: list.width

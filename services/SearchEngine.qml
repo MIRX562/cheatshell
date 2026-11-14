@@ -42,8 +42,9 @@ Singleton {
         return { terms: terms, tags: tags }
     }
 
-    // Returns an array of entries, ranked highest score first.
-    function search(query, activeTags) {
+    // Returns { entries, total }. `entries` is the visible window (all matches
+    // when limit <= 0) and `total` is the number of matches before limiting.
+    function search(query, activeTags, limit) {
         const parsed = root.parseQuery(query)
         const filterTags = []
 
@@ -75,8 +76,15 @@ Singleton {
             }
         }
 
-        if (parsed.terms.length === 0)
-            return pool.slice(0, Config.maxResults)
+        const max = root._limit(limit)
+
+        if (parsed.terms.length === 0) {
+            let total = pool.length
+            if (Config.maxResults > 0)
+                total = Math.min(total, Config.maxResults)
+            const shown = max > 0 ? Math.min(max, total) : total
+            return { entries: pool.slice(0, shown), total: total }
+        }
 
         const scored = []
         for (let i = 0; i < pool.length; i++) {
@@ -103,11 +111,22 @@ Singleton {
             return 0
         })
 
-        const limit = Math.min(Config.maxResults, scored.length)
+        let total = scored.length
+        if (Config.maxResults > 0)
+            total = Math.min(total, Config.maxResults)
+        const visible = max > 0 ? Math.min(max, total) : total
         const results = []
-        for (let i = 0; i < limit; i++)
+        for (let i = 0; i < visible; i++)
             results.push(scored[i].entry)
-        return results
+        return { entries: results, total: total }
+    }
+
+    // <= 0 means unlimited. Missing values fall back to search.maxResults.
+    function _limit(value) {
+        let max = Number(value)
+        if (!isFinite(max) || max < 0)
+            max = Config.maxResults
+        return Math.floor(max)
     }
 
     function _termScore(entry, term) {

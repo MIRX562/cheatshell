@@ -70,8 +70,15 @@ ShellRoot {
         property string pendingQuery: ""
         property var activeTags: []
         property int selectedIndex: 0
+        property bool settingsOpen: false
 
-        property var results: SearchEngine.search(win.query, win.activeTags)
+        // Number of ranked matches currently exposed to the list. Growing this
+        // window is what makes the list lazy; ListView virtualises the rows.
+        property int resultWindow: Config.pageSize
+        property var searchResult: SearchEngine.search(win.query, win.activeTags, win.resultWindow)
+        property var results: win.searchResult.entries
+        property int totalMatches: win.searchResult.total
+
         property var selectedEntry: win.results.length > 0
                                      ? win.results[Math.min(win.selectedIndex, win.results.length - 1)]
                                      : null
@@ -79,6 +86,7 @@ ShellRoot {
         onResultsChanged: Qt.callLater(win._resultsChanged)
         onVisibleChanged: {
             if (win.visible) {
+                win.settingsOpen = false
                 searchBar.focusInput()
                 FileScanner.requestScan()
             }
@@ -105,8 +113,52 @@ ShellRoot {
         function moveSelection(delta) {
             if (win.results.length === 0)
                 return
+
+            // At the last loaded row: pull the next page, then step into it.
+            if (delta > 0 && win.selectedIndex >= win.results.length - 1
+                    && win.results.length < win.totalMatches) {
+                win.loadMore()
+                Qt.callLater(win._stepAfterLoad)
+                return
+            }
+
+            if (delta > 0 && win.selectedIndex >= win.results.length - 4)
+                win.loadMore()
+
             win.selectedIndex = (win.selectedIndex + delta + win.results.length) % win.results.length
             list.positionViewAtIndex(win.selectedIndex, ListView.Contain)
+        }
+
+        function _stepAfterLoad() {
+            if (win.selectedIndex >= win.results.length - 1)
+                return
+            win.selectedIndex++
+            list.positionViewAtIndex(win.selectedIndex, ListView.Contain)
+        }
+
+        function loadMore() {
+            if (win.results.length >= win.totalMatches)
+                return
+            win.resultWindow = Math.min(win.totalMatches,
+                                        win.resultWindow + Config.pageSize)
+        }
+
+        function openSettings() {
+            win.settingsOpen = true
+            settingsPane.open()
+        }
+
+        function closeSettings() {
+            win.settingsOpen = false
+            searchBar.focusInput()
+        }
+
+        function settingsSaved() {
+            win.settingsOpen = false
+            win.resultWindow = Config.pageSize
+            searchBar.focusInput()
+            FileScanner.refresh(false)
+            win.toast("Settings saved")
         }
 
         function copyEntry(entry) {
@@ -146,8 +198,60 @@ ShellRoot {
             win.toast("Opened " + entry.filename)
         }
 
+        // Launches the configured external editor. The command is an argv array,
+        // so no shell is involved and note paths are never re-interpreted.
+        function openInEditor() {
+            const entry = win.selectedEntry
+            if (!entry) {
+                win.toast("Nothing selected")
+                return
+            }
+
+            const configured = Config.openWithCommand
+            if (!configured || configured.length === 0) {
+                win.toast("No external editor configured")
+                return
+            }
+
+            const argv = []
+            let replaced = false
+            for (let i = 0; i < configured.length; i++) {
+                const arg = String(configured[i])
+                if (arg.indexOf("{path}") >= 0) {
+                    argv.push(arg.split("{path}").join(entry.path))
+                    replaced = true
+                } else {
+                    argv.push(arg)
+                }
+            }
+            if (!replaced)
+                argv.push(entry.path)
+
+            Quickshell.execDetached(argv)
+            win.toast("Opening in " + win._editorLabel(argv))
+        }
+
+        function _editorLabel(argv) {
+            const names = {
+                "nvim": "Neovim", "vim": "Vim", "vi": "Vim", "code": "VS Code",
+                "codium": "VSCodium", "obsidian": "Obsidian",
+                "kitty": "kitty", "alacritty": "Alacritty",
+                "ghostty": "Ghostty", "foot": "foot", "wezterm": "WezTerm"
+            }
+            for (let i = 0; i < argv.length; i++) {
+                const base = String(argv[i]).split("/").pop()
+                if (names[base] !== undefined && i > 0)
+                    return names[base]
+            }
+            if (argv.length === 0)
+                return "editor"
+            const first = String(argv[0]).split("/").pop()
+            return names[first] !== undefined ? names[first] : first
+        }
+
         function refresh() {
             FileScanner.refresh(true)
+            win.resultWindow = Config.pageSize
             win.toast("Refreshing index…")
         }
 
@@ -160,6 +264,7 @@ ShellRoot {
                 next.push(tag)
             win.activeTags = next
             win.selectedIndex = 0
+            win.resultWindow = Config.pageSize
         }
 
         function toast(message) {
@@ -182,12 +287,15 @@ ShellRoot {
                 onTextEdited: (text) => {
                     win.pendingQuery = text
                     win.selectedIndex = 0
+                    win.resultWindow = Config.pageSize
                     searchDebounce.restart()
                 }
                 onMoveRequested: (delta) => win.moveSelection(delta)
                 onSubmitRequested: (example) => example ? win.copyExample() : win.copyPrimary()
                 onOpenSourceRequested: win.openSource()
+                onOpenEditorRequested: win.openInEditor()
                 onRefreshRequested: win.refresh()
+                onSettingsRequested: win.openSettings()
                 onDismissRequested: win.visible = false
             }
 
@@ -218,6 +326,7 @@ ShellRoot {
                         searchBar.focusInput()
                     }
                     onCopyRequested: (entry) => win.copyEntry(entry)
+                    onLoadMoreRequested: win.loadMore()
                 }
 
                 CommandPreview {
@@ -235,25 +344,59 @@ ShellRoot {
                 height: 16
 
                 Text {
+                    id: footerHelp
                     anchors.left: parent.left
                     anchors.verticalCenter: parent.verticalCenter
-                    text: "Enter copy  ·  Ctrl+Enter example  ·  Ctrl+O source  ·  Ctrl+R refresh  ·  Esc close  ·  Ctrl+Q quit"
+                    width: parent.width - footerStats.implicitWidth - 40
+                    text: "Enter copy  ·  Ctrl+Enter example  ·  Ctrl+O open  ·  Ctrl+E editor  ·  Ctrl+R refresh  ·  Ctrl+, settings  ·  Esc close"
                     color: "#5f6678"
                     font.pixelSize: 10
+                    elide: Text.ElideRight
                 }
 
                 Text {
+                    id: gear
                     anchors.right: parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    text: win.results.length + " / " + CommandModel.count + "  ·  " + FileScanner.status
+                    text: "⚙"
+                    color: gearMouse.containsMouse ? "#c7cede" : "#7c8499"
+                    font.pixelSize: 12
+
+                    MouseArea {
+                        id: gearMouse
+                        anchors.fill: parent
+                        anchors.margins: -4
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: win.openSettings()
+                    }
+                }
+
+                Text {
+                    id: footerStats
+                    anchors.right: gear.left
+                    anchors.rightMargin: 10
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: win.results.length + " of " + win.totalMatches + "  ·  " + FileScanner.status
                     color: "#5f6678"
                     font.pixelSize: 10
                 }
             }
         }
 
+        SettingsPane {
+            id: settingsPane
+            anchors.fill: parent
+            anchors.margins: 12
+            z: 10
+            visible: win.settingsOpen
+            onCloseRequested: win.closeSettings()
+            onSaved: win.settingsSaved()
+        }
+
         Rectangle {
             id: toast
+            z: 20
             property bool shown: false
 
             anchors.horizontalCenter: parent.horizontalCenter
@@ -317,6 +460,19 @@ ShellRoot {
 
             function hide(): void {
                 win.visible = false
+            }
+
+            function settings(): void {
+                win.visible = true
+                win.openSettings()
+            }
+
+            function toggleSettings(): void {
+                win.visible = true
+                if (win.settingsOpen)
+                    win.closeSettings()
+                else
+                    win.openSettings()
             }
 
             function quit(): void {

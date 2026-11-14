@@ -29,6 +29,8 @@ Singleton {
     property var _okDirs: []       // directories that were scanned successfully
     property int _dirLines: 0
     property bool _dirActive: false
+    property int _foundTotal: 0
+    property int _cappedOut: 0
 
     // Indexing state
     property var _parseQueue: []
@@ -225,13 +227,30 @@ Singleton {
     }
 
     function _finishScan() {
-        // 1. Drop entries whose files disappeared (deletions and renames).
-        //    Only do this for directories that were read successfully, so a
-        //    permissions error or unmounted drive never wipes the index.
+        // Apply indexing.maxFiles deterministically: sort paths and keep the
+        // first N. A cap of 0 means unlimited.
+        const allPaths = Object.keys(root._found)
+        allPaths.sort()
+        root._foundTotal = allPaths.length
+        root._cappedOut = 0
+
+        let allowedPaths = allPaths
+        if (Config.maxFiles > 0 && allPaths.length > Config.maxFiles) {
+            allowedPaths = allPaths.slice(0, Config.maxFiles)
+            root._cappedOut = allPaths.length - Config.maxFiles
+        }
+        const allowed = ({})
+        for (let i = 0; i < allowedPaths.length; i++)
+            allowed[allowedPaths[i]] = true
+
+        // 1. Drop entries whose files disappeared (deletions and renames) or
+        //    fell outside the configured file cap. Only do this for directories
+        //    that were read successfully, so a permissions error or unmounted
+        //    drive never wipes the index.
         const known = CommandModel.paths()
         for (let i = 0; i < known.length; i++) {
             const path = known[i]
-            if (Object.prototype.hasOwnProperty.call(root._found, path))
+            if (allowed[path] === true)
                 continue
             if (root._shouldRemove(path)) {
                 CommandModel.remove(path)
@@ -240,9 +259,10 @@ Singleton {
             }
         }
 
-        // 2. Queue only new or modified files for (re)parsing.
+        // 2. Queue only new or modified allowed files for (re)parsing.
         const queue = []
-        for (const path in root._found) {
+        for (let i = 0; i < allowedPaths.length; i++) {
+            const path = allowedPaths[i]
             const mtime = root._found[path]
             if (CommandModel.mtimeOf(path) !== mtime)
                 queue.push({ path: path, mtime: mtime })
@@ -383,9 +403,15 @@ Singleton {
         }
 
         root.status = CommandModel.count + " entries indexed"
+        if (root._cappedOut > 0)
+            root.status += " · limit " + Config.maxFiles
         if (root._changedThisScan) {
-            console.log("[cheatshell] index: " + CommandModel.count + " entries from "
-                        + Object.keys(root._found).length + " file(s)")
+            let message = "[cheatshell] index: " + CommandModel.count + " entries from "
+                        + root._foundTotal + " file(s)"
+            if (root._cappedOut > 0)
+                message += " (" + Config.maxFiles + " of " + root._foundTotal
+                         + " due to indexing.maxFiles)"
+            console.log(message)
             root._changedThisScan = false
         }
 

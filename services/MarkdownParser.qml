@@ -106,18 +106,27 @@ Singleton {
         const tags = frontmatter !== null ? frontmatter.tags : []
 
         let command = ""
+        let commandLang = "text"
         const commandSection = sections["command"]
         if (commandSection !== undefined) {
             const blocks = root._codeBlocks(commandSection.lines)
-            command = blocks.length > 0 ? blocks[0] : root._plainText(commandSection.lines)
+            if (blocks.length > 0) {
+                command = blocks[0].code
+                commandLang = blocks[0].language
+            } else {
+                command = root._plainText(commandSection.lines)
+            }
         }
 
         const examples = []
+        const exampleLangs = []
         const examplesSection = sections["examples"]
         if (examplesSection !== undefined) {
             const blocks = root._codeBlocks(examplesSection.lines)
-            for (let i = 0; i < blocks.length; i++)
-                examples.push(blocks[i])
+            for (let i = 0; i < blocks.length; i++) {
+                examples.push(blocks[i].code)
+                exampleLangs.push(blocks[i].language)
+            }
         }
 
         let notes = ""
@@ -136,7 +145,9 @@ Singleton {
             tags: tags,
             description: description,
             command: command,
+            commandLang: commandLang,
             examples: examples,
+            exampleLangs: exampleLangs,
             notes: notes,
             sTitle: title.toLowerCase(),
             sTags: tags.join(" ").toLowerCase(),
@@ -225,6 +236,7 @@ Singleton {
     }
 
     // Extracts every fenced code block from a section, preserving indentation.
+    // Returns [{ code, language }]; `language` is the normalised info string.
     function _codeBlocks(lines) {
         const blocks = []
         let fence = null
@@ -236,7 +248,11 @@ Singleton {
 
             if (fence === null) {
                 if (openMatch) {
-                    fence = { ch: openMatch[2].charAt(0), len: openMatch[2].length }
+                    fence = {
+                        ch: openMatch[2].charAt(0),
+                        len: openMatch[2].length,
+                        language: root._normaliseLanguage(openMatch[3])
+                    }
                     buffer = []
                 }
                 continue
@@ -244,7 +260,7 @@ Singleton {
 
             const closeMatch = /^\s*(`{3,}|~{3,})\s*$/.exec(line)
             if (closeMatch && closeMatch[1].charAt(0) === fence.ch && closeMatch[1].length >= fence.len) {
-                blocks.push(root._dedent(buffer))
+                blocks.push({ code: root._dedent(buffer), language: fence.language })
                 fence = null
                 buffer = null
             } else {
@@ -254,9 +270,41 @@ Singleton {
 
         // Tolerate an unterminated final fence instead of dropping the content.
         if (fence !== null)
-            blocks.push(root._dedent(buffer))
+            blocks.push({ code: root._dedent(buffer), language: fence.language })
 
         return blocks
+    }
+
+    // Maps a fence info string to a known highlighter id. Unknown languages are
+    // kept as-is so the preview can show the original name; the highlighter
+    // treats anything it does not know as plain text.
+    function _normaliseLanguage(info) {
+        let lang = String(info === undefined || info === null ? "" : info).trim().toLowerCase()
+        if (lang === "")
+            return "text"
+
+        // Support pandoc/quartz style attributes: ```{.bash ...}
+        const attr = /^\{\.?\s*([A-Za-z0-9_+#.-]+)/.exec(lang)
+        if (attr) {
+            lang = attr[1]
+        } else {
+            const space = lang.search(/[\s,{]/)
+            if (space === 0)
+                return "text"
+            if (space > 0)
+                lang = lang.slice(0, space)
+        }
+
+        const aliases = {
+            "sh": "bash", "shell": "bash", "zsh": "bash", "console": "bash",
+            "shell-session": "bash", "bash-session": "bash",
+            "js": "js", "javascript": "js", "ts": "js", "typescript": "js",
+            "jsx": "js", "tsx": "js", "node": "js",
+            "yml": "yaml", "conf": "ini", "cfg": "ini", "properties": "ini",
+            "docker": "dockerfile", "docker-file": "dockerfile",
+            "plaintext": "text", "plain": "text", "txt": "text"
+        }
+        return aliases[lang] !== undefined ? aliases[lang] : lang
     }
 
     function _dedent(lines) {
