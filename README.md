@@ -18,7 +18,7 @@ nothing is ever written back, and no command is ever executed.
 One line, no clone required:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/MIRX562/cheatshell/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/MIRX562/cheatshell/refs/heads/main/install.sh | bash
 ```
 
 The installer downloads the source from GitHub, checks the OS, Wayland
@@ -31,7 +31,7 @@ and validates the QML. Re-running it is safe.
 Non-interactive (for scripts or a fresh machine):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/MIRX562/cheatshell/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/MIRX562/cheatshell/refs/heads/main/install.sh \
   | bash -s -- --yes --notes-dir "$HOME/Notes/commands"
 ```
 
@@ -54,7 +54,7 @@ Useful options:
 With the one-liner, pass flags after `bash -s --`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/MIRX562/cheatshell/main/install.sh \
+curl -fsSL https://raw.githubusercontent.com/MIRX562/cheatshell/refs/heads/main/install.sh \
   | bash -s -- --notes-dir ~/Documents/snippets
 ```
 

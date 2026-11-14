@@ -7,7 +7,7 @@
 # Safe to re-run.
 #
 # One-liner (no clone required):
-#   curl -fsSL https://raw.githubusercontent.com/MIRX562/cheatshell/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/MIRX562/cheatshell/refs/heads/main/install.sh | bash
 #
 # Or run it from a local source directory — local files are used automatically.
 #
@@ -57,7 +57,7 @@ that the runtime can run it, and writes a starter config on install.
 Safe to re-run.
 
 One-liner (no clone required):
-  curl -fsSL https://raw.githubusercontent.com/MIRX562/cheatshell/main/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/MIRX562/cheatshell/refs/heads/main/install.sh | bash
 
 Usage:
   ./install.sh                    interactive install
